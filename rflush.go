@@ -1,6 +1,8 @@
 package rflush
 
-import "github.com/tidwall/geoindex/child"
+import (
+	knn "github.com/anjulapaulus/rflush-knn"
+)
 
 const (
 	maxEntries = 40
@@ -461,15 +463,16 @@ func (b *BBox) onEdge(b2 *BBox) bool {
 // optionally be used to avoid extra allocations.
 func (r *RTree) Children(
 	parent interface{},
-	reuse []child.Child,
-) []child.Child {
+	reuse []Child,
+) []Child {
 	children := reuse
 	if parent == nil {
 		if r.Len() > 0 {
 			// fill with the root
-			children = append(children, child.Child{
+			children = append(children, Child{
 				Min:  r.root.Min,
 				Max:  r.root.Max,
+				Reference:r.root.Reference,
 				Data: r.root.Data,
 				Item: false,
 			})
@@ -484,9 +487,10 @@ func (r *RTree) Children(
 			}
 		}
 		for i := 0; i < n.count; i++ {
-			children = append(children, child.Child{
+			children = append(children, Child{
 				Min:  n.children[i].Min,
 				Max:  n.children[i].Max,
+				Reference:n.children[i].Reference,
 				Data: n.children[i].Data,
 				Item: item,
 			})
