@@ -1,4 +1,6 @@
-package main
+package rflush
+
+import "github.com/tidwall/geoindex/child"
 
 const (
 	maxEntries = 40
@@ -156,7 +158,6 @@ func (b *BBox) contains(b2 *BBox) bool{
 	return true
 }
 
-
 func (b *BBox) extend(b2 *BBox) {
 	if b2.Min[0] < b.Min[0] {
 		b.Min[0] = b2.Min[0]
@@ -262,7 +263,7 @@ func (b *BBox) intersects(a *BBox) bool {
 }
 
 
-func (b *BBox) search(
+func (b *BBox) search (
 	target *BBox, height int,
 	iter func(min, max [2]float64,reference string) bool,
 ) bool {
@@ -346,4 +347,188 @@ func (r *RTree) Bounds() (min, max [2]float64) {
 
 func (r *RTree) Len() int{
 	return r.count
+}
+
+// Remove data from tree
+func (r *RTree) Remove(min, max [2]float64, reference string, data interface{}) {
+	var item BBox
+	set(min, max,reference, data, &item)
+	if r.root.Data == nil || !r.root.contains(&item) {
+		return
+	}
+	var removed, recalculated bool
+	removed, recalculated, r.reinsert =
+		r.root.remove(&item, r.height, r.reinsert[:0])
+	if !removed {
+		return
+	}
+	r.count -= len(r.reinsert) + 1
+	if r.count == 0 {
+		r.root = BBox{}
+		recalculated = false
+	} else {
+		for r.height > 0 && r.root.Data.(*node).count == 1 {
+			r.root = r.root.Data.(*node).children[0]
+			r.height--
+			r.root.adjustParentBBoxes()
+		}
+	}
+	if recalculated {
+		r.root.adjustParentBBoxes()
+	}
+	for i := range r.reinsert {
+		r.insert(&r.reinsert[i])
+		r.reinsert[i].Data = nil
+	}
+}
+
+func (b *BBox) remove (item *BBox, height int, reinsert []BBox) (
+	removed, recalced bool, reinsertOut []BBox,
+) {
+	n := b.Data.(*node)
+	if height == 0 {
+		for i := 0; i < n.count; i++ {
+			if n.children[i].Data == item.Data {
+				// found the target item to remove
+				recalced = b.onEdge(&n.children[i])
+				n.children[i] = n.children[n.count-1]
+				n.children[n.count-1].Data = nil
+				n.count--
+				if recalced {
+					b.adjustParentBBoxes()
+				}
+				return true, recalced, reinsert
+			}
+		}
+	} else {
+		for i := 0; i < n.count; i++ {
+			if !n.children[i].contains(item) {
+				continue
+			}
+			removed, recalced, reinsert =
+				n.children[i].remove(item, height-1, reinsert)
+			if !removed {
+				continue
+			}
+			if n.children[i].Data.(*node).count < minEntries {
+				// underflow
+				if !recalced {
+					recalced = b.onEdge(&n.children[i])
+				}
+				reinsert = n.children[i].flatten(reinsert, height-1)
+				n.children[i] = n.children[n.count-1]
+				n.children[n.count-1].Data = nil
+				n.count--
+			}
+			if recalced {
+				b.adjustParentBBoxes()
+			}
+			return removed, recalced, reinsert
+		}
+	}
+	return false, false, reinsert
+}
+
+// flatten flattens all leaf children into a single list
+func (b *BBox) flatten(all []BBox, height int) []BBox {
+	n := b.Data.(*node)
+	if height == 0 {
+		all = append(all, n.children[:n.count]...)
+	} else {
+		for i := 0; i < n.count; i++ {
+			all = n.children[i].flatten(all, height-1)
+		}
+	}
+	return all
+}
+
+// onEdge returns true when b2 is on the edge of b
+func (b *BBox) onEdge(b2 *BBox) bool {
+	if b.Min[0] == b2.Min[0] || b.Max[0] == b2.Max[0] {
+		return true
+	}
+	if b.Min[1] == b2.Min[1] || b.Max[1] == b2.Max[1] {
+		return true
+	}
+	return false
+}
+
+// Children is a utility function that returns all children for parent node.
+// If parent node is nil then the root nodes should be returned. The min, max,
+// data, and items slices all must have the same lengths. And, each element
+// from all slices must be associated. Returns true for `items` when the the
+// item at the leaf level. The reuse buffers are empty length slices that can
+// optionally be used to avoid extra allocations.
+func (r *RTree) Children(
+	parent interface{},
+	reuse []child.Child,
+) []child.Child {
+	children := reuse
+	if parent == nil {
+		if r.Len() > 0 {
+			// fill with the root
+			children = append(children, child.Child{
+				Min:  r.root.Min,
+				Max:  r.root.Max,
+				Data: r.root.Data,
+				Item: false,
+			})
+		}
+	} else {
+		// fill with child items
+		n := parent.(*node)
+		item := true
+		if n.count > 0 {
+			if _, ok := n.children[0].Data.(*node); ok {
+				item = false
+			}
+		}
+		for i := 0; i < n.count; i++ {
+			children = append(children, child.Child{
+				Min:  n.children[i].Min,
+				Max:  n.children[i].Max,
+				Data: n.children[i].Data,
+				Item: item,
+			})
+		}
+	}
+	return children
+}
+
+
+// Replace an item in the structure. This is effectively just a Remove
+// followed by an Insert.
+func (r *RTree) Replace(
+	oldMin, oldMax [2]float64, oldReference string, oldData interface{},
+	newMin, newMax [2]float64, newReference string, newData interface{},
+) {
+	r.Remove(oldMin, oldMax,oldReference, oldData)
+	r.Insert(newMin, newMax,newReference, newData)
+}
+
+// NewRect constructs and returns a pointer to a Rect given a corner point and
+// the lengths of each dimension.  The point p should be the most-negative point
+// on the rectangle (in every dimension) and every length should be positive.
+func NewBBox(p [2]float64, lengths [2]float64) (r *BBox) {
+	r = new(BBox)
+	r.Min = p
+
+	r.Max = [2]float64{}
+	for i := range p {
+		if lengths[i] <= 0 {
+			return
+		}
+		r.Max[i] = p[i] + lengths[i]
+	}
+	return
+}
+
+//PointToBBox returns BBox from point given
+func PointToBBox(p [2]float64, tol float64) *BBox {
+	var a, b [2]float64
+	for i := range p {
+		a[i] = p[i] - tol
+		b[i] = p[i] + tol
+	}
+	return &BBox{a, b,"",nil}
 }
