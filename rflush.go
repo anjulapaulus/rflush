@@ -1,8 +1,5 @@
 package rflush
 
-import (
-	knn "github.com/anjulapaulus/rflush-knn"
-)
 
 const (
 	maxEntries = 40
