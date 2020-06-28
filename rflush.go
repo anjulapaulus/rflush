@@ -17,23 +17,23 @@ type node struct {
 	count    int
 	children [maxEntries + 1]BBox
 }
+
 //bbox represents a boundary box
 type BBox struct {
 	Min, Max  [2]float64
-	Reference string
 	Data      interface{}
 }
 
 
-func (r *RTree) Insert(min, max [2]float64, reference string, value interface{}) {
+func (r *RTree) Insert(min, max [2]float64,value interface{}) {
 	var item BBox
-	set(min,max, reference,value, &item)
+	set(min,max,value, &item)
 	r.insert(&item)
 }
 
 func (r *RTree) insert(item *BBox) {
-	if r.root.Reference == ""{
-		set(item.Min,item.Max, item.Reference, new(node), &r.root)
+	if r.root.Data == nil{
+		set(item.Min,item.Max,new(node), &r.root)
 	}
 	grown := r.root.insert(item, r.height)
 	if grown {
@@ -138,10 +138,9 @@ func (b *BBox) enlargedArea(b2 *BBox) float64 {
 	return area
 }
 
-func set(min,max [2]float64, reference string, value interface{}, bbox *BBox) {
+func set(min,max [2]float64,value interface{}, bbox *BBox) {
 	bbox.Min = min
 	bbox.Max = max
-	bbox.Reference = reference
 	bbox.Data = value
 }
 
@@ -231,18 +230,18 @@ func (b *BBox) adjustParentBBoxes() {
 // Search ...
 func (r *RTree) Search (
 	min, max [2]float64,
-	iter func(min, max [2]float64,reference string) bool,
+	iter func(min, max [2]float64,data interface{}) bool,
 ) {
 	var target BBox
-	set(min, max, "",nil, &target)
+	set(min, max,nil, &target)
 	r.search(&target, iter)
 }
 
 func (r *RTree) search (
 	target *BBox,
-	iter func(min, max [2]float64,reference string) bool,
+	iter func(min, max [2]float64,data interface{}) bool,
 ) {
-	if r.root.Reference == "" {
+	if r.root.Data == nil {
 		return
 	}
 	if target.intersects(&r.root) {
@@ -263,14 +262,14 @@ func (b *BBox) intersects(a *BBox) bool {
 
 func (b *BBox) search (
 	target *BBox, height int,
-	iter func(min, max [2]float64,reference string) bool,
+	iter func(min, max [2]float64,Data interface{}) bool,
 ) bool {
 	n := b.Data.(*node)
 	if height == 0 {
 		for i := 0; i < n.count; i++ {
 			child := n.children[i]
 			if target.intersects(&child) {
-				if !iter(child.Min, child.Max,child.Reference) {
+				if !iter(child.Min, child.Max,child.Data) {
 					return false
 				}
 			}
@@ -282,7 +281,7 @@ func (b *BBox) search (
 				cn := child.Data.(*node)
 				for i := 0; i < cn.count; i++ {
 					if target.intersects(&cn.children[i]) {
-						if !iter(cn.children[i].Min, cn.children[i].Max,child.Reference) {
+						if !iter(cn.children[i].Min, cn.children[i].Max,child.Data) {
 							return false
 						}
 					}
@@ -303,8 +302,8 @@ func (b *BBox) search (
 }
 
 // All function returns all the entries in the tree.
-func (r *RTree) All(iter func(min, max [2]float64, reference string, data interface{}) bool){
-	if r.root.Reference == "" {
+func (r *RTree) All(iter func(min, max [2]float64,data interface{}) bool){
+	if r.root.Data == nil {
 		return
 	}
 	r.root.all(r.height,iter)
@@ -312,12 +311,12 @@ func (r *RTree) All(iter func(min, max [2]float64, reference string, data interf
 
 func (b *BBox) all(
 	height int,
-	iter func(min, max [2]float64, reference string, value interface{}) bool,
+	iter func(min, max [2]float64,value interface{}) bool,
 	)bool{
 	n := b.Data.(*node)
 	if height == 0 {
 		for i := 0; i < n.count; i++ {
-			if !iter(n.children[i].Min, n.children[i].Max, n.children[i].Reference, n.children[i].Data) {
+			if !iter(n.children[i].Min, n.children[i].Max,n.children[i].Data) {
 				return false
 			}
 		}
@@ -325,7 +324,7 @@ func (b *BBox) all(
 		for i := 0; i < n.count; i++ {
 			cn := n.children[i].Data.(*node)
 			for j := 0; j < cn.count; j++ {
-				if !iter(cn.children[i].Min, cn.children[j].Max,cn.children[j].Reference, cn.children[j].Data) {
+				if !iter(cn.children[i].Min, cn.children[j].Max, cn.children[j].Data) {
 					return false
 				}
 			}
@@ -342,7 +341,7 @@ func (b *BBox) all(
 
 // Bounds returns the minimum bounding rect
 func (r *RTree) Bounds() (min, max [2]float64) {
-	if r.root.Reference == "" {
+	if r.root.Data == nil {
 		return
 	}
 	return r.root.Min, r.root.Max
@@ -355,14 +354,14 @@ func (r *RTree) Len() int{
 }
 
 // Remove data from tree
-func (r *RTree) Remove(min, max [2]float64, reference string, data interface{}) {
+func (r *RTree) Remove(min, max [2]float64, data interface{}) {
 	var item BBox
-	set(min, max,reference, data, &item)
-	if r.root.Reference == "" || !r.root.contains(&item) {
+	set(min, max,data, &item)
+	if r.root.Data == nil || !r.root.contains(&item) {
 		return
 	}
-	var removed, recalculated bool
-	removed, recalculated, r.reinsert =
+	var removed, recalced bool
+	removed, recalced, r.reinsert =
 		r.root.remove(&item, r.height, r.reinsert[:0])
 	if !removed {
 		return
@@ -370,7 +369,7 @@ func (r *RTree) Remove(min, max [2]float64, reference string, data interface{}) 
 	r.count -= len(r.reinsert) + 1
 	if r.count == 0 {
 		r.root = BBox{}
-		recalculated = false
+		recalced = false
 	} else {
 		for r.height > 0 && r.root.Data.(*node).count == 1 {
 			r.root = r.root.Data.(*node).children[0]
@@ -378,7 +377,7 @@ func (r *RTree) Remove(min, max [2]float64, reference string, data interface{}) 
 			r.root.adjustParentBBoxes()
 		}
 	}
-	if recalculated {
+	if recalced {
 		r.root.adjustParentBBoxes()
 	}
 	for i := range r.reinsert {
@@ -387,13 +386,13 @@ func (r *RTree) Remove(min, max [2]float64, reference string, data interface{}) 
 	}
 }
 
-func (b *BBox) remove (item *BBox, height int, reinsert []BBox) (
+func (b *BBox) remove(item *BBox, height int, reinsert []BBox) (
 	removed, recalced bool, reinsertOut []BBox,
 ) {
 	n := b.Data.(*node)
 	if height == 0 {
 		for i := 0; i < n.count; i++ {
-			if n.children[i].Reference == item.Reference {
+			if n.children[i].Data == item.Data {
 				// found the target item to remove
 				recalced = b.onEdge(&n.children[i])
 				n.children[i] = n.children[n.count-1]
@@ -433,6 +432,7 @@ func (b *BBox) remove (item *BBox, height int, reinsert []BBox) (
 	}
 	return false, false, reinsert
 }
+
 
 // flatten flattens all leaf children into a single list
 func (b *BBox) flatten(all []BBox, height int) []BBox {
@@ -475,7 +475,6 @@ func (r *RTree) Children(
 			children = append(children, Child{
 				Min:  r.root.Min,
 				Max:  r.root.Max,
-				Reference:r.root.Reference,
 				Data: r.root.Data,
 				Item: false,
 			})
@@ -493,7 +492,6 @@ func (r *RTree) Children(
 			children = append(children, Child{
 				Min:  n.children[i].Min,
 				Max:  n.children[i].Max,
-				Reference:n.children[i].Reference,
 				Data: n.children[i].Data,
 				Item: item,
 			})
@@ -506,11 +504,11 @@ func (r *RTree) Children(
 // Replace an item in the structure. This is effectively just a Remove
 // followed by an Insert.
 func (r *RTree) Replace(
-	oldMin, oldMax [2]float64, oldReference string, oldData interface{},
-	newMin, newMax [2]float64, newReference string, newData interface{},
+	oldMin, oldMax [2]float64,oldData interface{},
+	newMin, newMax [2]float64,newData interface{},
 ) {
-	r.Remove(oldMin, oldMax,oldReference, oldData)
-	r.Insert(newMin, newMax,newReference, newData)
+	r.Remove(oldMin, oldMax, oldData)
+	r.Insert(newMin, newMax,newData)
 }
 
 // NewRect constructs and returns a pointer to a Rect given a corner point and
@@ -538,5 +536,5 @@ func PointToBBox(p [2]float64, tol float64) *BBox {
 		a[i] = p[i] - tol
 		b[i] = p[i] + tol
 	}
-	return &BBox{a, b,"",nil}
+	return &BBox{a, b,nil}
 }
