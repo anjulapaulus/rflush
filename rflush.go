@@ -1,8 +1,7 @@
 package rflush
 
-
 const (
-	maxEntries = 40
+	maxEntries = 16
 	minEntries = maxEntries * 40 / 100
 )
 
@@ -33,7 +32,7 @@ func (r *RTree) Insert(min, max [2]float64, reference string, value interface{})
 }
 
 func (r *RTree) insert(item *BBox) {
-	if r.root.Data == nil{
+	if r.root.Reference == ""{
 		set(item.Min,item.Max, item.Reference, new(node), &r.root)
 	}
 	grown := r.root.insert(item, r.height)
@@ -243,7 +242,7 @@ func (r *RTree) search (
 	target *BBox,
 	iter func(min, max [2]float64,reference string) bool,
 ) {
-	if r.root.Data == nil {
+	if r.root.Reference == "" {
 		return
 	}
 	if target.intersects(&r.root) {
@@ -304,34 +303,41 @@ func (b *BBox) search (
 }
 
 // All function returns all the entries in the tree.
-func (r *RTree) All() []BBox {
+func (r *RTree) All(iter func(min, max [2]float64, reference string, data interface{}) bool){
 	if r.root.Reference == "" {
-		return nil
+		return
 	}
-	all := r.root.all(r.height)
-	return all
+	r.root.all(r.height,iter)
 }
 
-func (b *BBox) all(height int) []BBox {
-	var all []BBox
+func (b *BBox) all(
+	height int,
+	iter func(min, max [2]float64, reference string, value interface{}) bool,
+	)bool{
 	n := b.Data.(*node)
 	if height == 0 {
 		for i := 0; i < n.count; i++ {
-			all = append(all, n.children[i])
+			if !iter(n.children[i].Min, n.children[i].Max, n.children[i].Reference, n.children[i].Data) {
+				return false
+			}
 		}
 	} else if height == 1 {
 		for i := 0; i < n.count; i++ {
 			cn := n.children[i].Data.(*node)
 			for j := 0; j < cn.count; j++ {
-				all = append(all, cn.children[i])
+				if !iter(cn.children[i].Min, cn.children[j].Max,cn.children[j].Reference, cn.children[j].Data) {
+					return false
+				}
 			}
 		}
 	} else {
 		for i := 0; i < n.count; i++ {
-			n.children[i].all(height - 1)
+			if !n.children[i].all(height-1, iter) {
+				return false
+			}
 		}
 	}
-	return all
+	return true
 }
 
 // Bounds returns the minimum bounding rect
@@ -352,7 +358,7 @@ func (r *RTree) Len() int{
 func (r *RTree) Remove(min, max [2]float64, reference string, data interface{}) {
 	var item BBox
 	set(min, max,reference, data, &item)
-	if r.root.Data == nil || !r.root.contains(&item) {
+	if r.root.Reference == "" || !r.root.contains(&item) {
 		return
 	}
 	var removed, recalculated bool
@@ -387,7 +393,7 @@ func (b *BBox) remove (item *BBox, height int, reinsert []BBox) (
 	n := b.Data.(*node)
 	if height == 0 {
 		for i := 0; i < n.count; i++ {
-			if n.children[i].Data == item.Data {
+			if n.children[i].Reference == item.Reference {
 				// found the target item to remove
 				recalced = b.onEdge(&n.children[i])
 				n.children[i] = n.children[n.count-1]
@@ -519,6 +525,7 @@ func NewBBox(p [2]float64, lengths [2]float64) (r *BBox) {
 		if lengths[i] <= 0 {
 			return
 		}
+
 		r.Max[i] = p[i] + lengths[i]
 	}
 	return
