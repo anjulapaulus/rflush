@@ -2,10 +2,10 @@ package rflush
 
 import (
 	"fmt"
+	"github.com/anjulapaulus/rflush/test_data"
 	"github.com/tidwall/lotsa"
 	"math/rand"
 	"os"
-	"rflush/test_data"
 	"strconv"
 	"testing"
 	"time"
@@ -297,7 +297,7 @@ func init() {
 
 func TestRtree(t *testing.T) {
 	t.Run("BenchVarious", func(t *testing.T) {
-		Tests.TestBenchVarious(t, RTree{}, 1000000)
+		Tests.TestBenchVarious(t, RTree{}, 1000)
 	})
 }
 

@@ -1,4 +1,4 @@
-module rflush
+module github.com/anjulapaulus/rflush
 
 go 1.12
 
