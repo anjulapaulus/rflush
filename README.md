@@ -1,5 +1,7 @@
 RFlush
 ======
+[![Build Status](https://travis-ci.org/anjulapaulus/rflush.svg?branch=master)](https://travis-ci.com/anjulapaulus/rflush)
+
 
 RFlush is high performance 2D RTree spatial indexing structure for points and rectangles written in golang.
 
